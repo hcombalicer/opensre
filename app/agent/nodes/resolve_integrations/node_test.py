@@ -10,7 +10,7 @@ from app.agent.nodes.resolve_integrations.node import (
 )
 
 
-def test_load_env_integrations_reads_grafana_datadog_and_aws(monkeypatch) -> None:
+def test_load_env_integrations_reads_grafana_datadog_aws_github_and_sentry(monkeypatch) -> None:
     monkeypatch.setenv("GRAFANA_INSTANCE_URL", "https://example.grafana.net")
     monkeypatch.setenv("GRAFANA_READ_TOKEN", "grafana-token")
     monkeypatch.setenv("DD_API_KEY", "dd-api")
@@ -20,6 +20,14 @@ def test_load_env_integrations_reads_grafana_datadog_and_aws(monkeypatch) -> Non
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
     monkeypatch.setenv("AWS_SESSION_TOKEN", "session")
     monkeypatch.setenv("AWS_REGION", "eu-west-1")
+    monkeypatch.setenv("GITHUB_MCP_URL", "https://api.githubcopilot.com/mcp/")
+    monkeypatch.setenv("GITHUB_MCP_MODE", "streamable-http")
+    monkeypatch.setenv("GITHUB_MCP_AUTH_TOKEN", "ghp_test")
+    monkeypatch.setenv("GITHUB_MCP_TOOLSETS", "repos,issues")
+    monkeypatch.setenv("SENTRY_URL", "https://sentry.io")
+    monkeypatch.setenv("SENTRY_ORG_SLUG", "demo-org")
+    monkeypatch.setenv("SENTRY_AUTH_TOKEN", "sntrys_test")
+    monkeypatch.setenv("SENTRY_PROJECT_SLUG", "payments")
 
     integrations = _load_env_integrations()
     by_service = {integration["service"]: integration for integration in integrations}
@@ -28,6 +36,9 @@ def test_load_env_integrations_reads_grafana_datadog_and_aws(monkeypatch) -> Non
     assert by_service["datadog"]["credentials"]["site"] == "datadoghq.eu"
     assert by_service["aws"]["credentials"]["access_key_id"] == "AKIA_TEST"
     assert by_service["aws"]["credentials"]["region"] == "eu-west-1"
+    assert by_service["github"]["credentials"]["mode"] == "streamable-http"
+    assert by_service["github"]["credentials"]["toolsets"] == ["repos", "issues"]
+    assert by_service["sentry"]["credentials"]["organization_slug"] == "demo-org"
 
 
 def test_merge_local_integrations_prefers_store_over_env() -> None:
@@ -192,3 +203,37 @@ def test_detect_sources_ignores_eks_without_role_arn() -> None:
     )
 
     assert "eks" not in sources
+
+
+def test_detect_sources_adds_github_and_sentry_when_context_is_present() -> None:
+    sources = detect_sources(
+        raw_alert={
+            "repository": "Tracer-Cloud/open-sre-agent",
+            "repo_url": "https://github.com/Tracer-Cloud/open-sre-agent",
+            "file_path": "app/main.py",
+            "error_message": "TimeoutError",
+            "sentry_issue_url": "https://sentry.io/organizations/demo-org/issues/4242/",
+        },
+        context={},
+        resolved_integrations={
+            "github": {
+                "url": "https://api.githubcopilot.com/mcp/",
+                "mode": "streamable-http",
+                "auth_token": "ghp_test",
+                "command": "",
+                "args": [],
+            },
+            "sentry": {
+                "base_url": "https://sentry.io",
+                "organization_slug": "demo-org",
+                "auth_token": "sntrys_test",
+                "project_slug": "payments",
+            },
+        },
+    )
+
+    assert sources["github"]["owner"] == "Tracer-Cloud"
+    assert sources["github"]["repo"] == "open-sre-agent"
+    assert sources["github"]["path"] == "app/main.py"
+    assert sources["sentry"]["issue_id"] == "4242"
+    assert sources["sentry"]["organization_slug"] == "demo-org"

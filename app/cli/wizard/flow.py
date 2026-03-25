@@ -16,12 +16,16 @@ from app.cli.wizard.integration_health import (
     IntegrationHealthResult,
     validate_aws_integration,
     validate_datadog_integration,
+    validate_github_mcp_integration,
     validate_grafana_integration,
+    validate_sentry_integration,
     validate_slack_webhook,
 )
 from app.cli.wizard.probes import ProbeResult, probe_local_target, probe_remote_target
 from app.cli.wizard.store import get_store_path, save_local_config
 from app.cli.wizard.validation import build_demo_action_response, validate_provider_credentials
+from app.integrations.github_mcp import DEFAULT_GITHUB_MCP_MODE, DEFAULT_GITHUB_MCP_URL
+from app.integrations.sentry import DEFAULT_SENTRY_URL, get_sentry_auth_recommendations
 from app.integrations.store import upsert_integration
 
 _console = Console()
@@ -137,6 +141,10 @@ def _prompt_value(
         if allow_empty:
             return ""
         _console.print("[red]  This value is required.[/]")
+
+
+def _parse_csv_values(raw_value: str) -> list[str]:
+    return [part.strip() for part in raw_value.split(",") if part.strip()]
 
 
 def _prompt_api_key(provider: ProviderOption) -> str:
@@ -372,6 +380,115 @@ def _configure_aws() -> tuple[str, str]:
         _console.print("[dim]  Re-enter the AWS values to try again, or press Ctrl+C to cancel.[/]")
 
 
+def _configure_github_mcp() -> tuple[str, str]:
+    mode = _choose(
+        "Choose the GitHub MCP transport:",
+        [
+            Choice(value="sse", label="SSE"),
+            Choice(value="streamable-http", label="Streamable HTTP"),
+            Choice(value="stdio", label="stdio"),
+        ],
+        default=DEFAULT_GITHUB_MCP_MODE,
+    )
+
+    while True:
+        url = ""
+        command = ""
+        args: list[str] = []
+        if mode == "stdio":
+            command = _prompt_value("GitHub MCP command", default="github-mcp-server")
+            args_raw = _prompt_value(
+                "GitHub MCP args",
+                default="stdio --toolsets repos,issues,pull_requests,actions",
+            )
+            args = [part for part in args_raw.split() if part]
+        else:
+            url = _prompt_value("GitHub MCP URL", default=DEFAULT_GITHUB_MCP_URL)
+
+        toolsets = _parse_csv_values(
+            _prompt_value(
+                "GitHub MCP toolsets (comma-separated)",
+                default="repos,issues,pull_requests,actions",
+            )
+        )
+        auth_token = _prompt_value(
+            "GitHub PAT / auth token (optional if the server already authenticates upstream)",
+            secret=True,
+            allow_empty=True,
+        )
+
+        with _console.status("Validating GitHub MCP integration...", spinner="dots"):
+            result = validate_github_mcp_integration(
+                url=url,
+                mode=mode,
+                auth_token=auth_token,
+                command=command,
+                args=args,
+                toolsets=toolsets,
+            )
+        _render_integration_result("GitHub MCP", result)
+        if result.ok:
+            credentials = {
+                "url": url,
+                "mode": mode,
+                "auth_token": auth_token,
+                "command": command,
+                "args": args,
+                "toolsets": toolsets,
+            }
+            upsert_integration("github", {"credentials": credentials})
+            env_path = sync_env_values({
+                "GITHUB_MCP_URL": url,
+                "GITHUB_MCP_MODE": mode,
+                "GITHUB_MCP_COMMAND": command,
+                "GITHUB_MCP_ARGS": " ".join(args),
+                "GITHUB_MCP_AUTH_TOKEN": auth_token,
+                "GITHUB_MCP_TOOLSETS": ",".join(toolsets),
+            })
+            return "GitHub MCP", str(env_path)
+        _console.print("[dim]  Re-enter the GitHub MCP values to try again, or press Ctrl+C to cancel.[/]")
+
+
+def _configure_sentry() -> tuple[str, str]:
+    guidance = get_sentry_auth_recommendations()
+    _console.print(
+        "[dim]Recommended: use a "
+        f"{guidance['recommended_token_type']} from {guidance['where_to_create']}. "
+        f"Use {guidance['fallback_token_type']} only when you need broader scopes.[/]"
+    )
+
+    while True:
+        base_url = _prompt_value("Sentry base URL", default=DEFAULT_SENTRY_URL)
+        organization_slug = _prompt_value("Sentry organization slug")
+        project_slug = _prompt_value("Sentry project slug (optional)", allow_empty=True)
+        auth_token = _prompt_value("Sentry auth token", secret=True)
+
+        with _console.status("Validating Sentry integration...", spinner="dots"):
+            result = validate_sentry_integration(
+                base_url=base_url,
+                organization_slug=organization_slug,
+                auth_token=auth_token,
+                project_slug=project_slug,
+            )
+        _render_integration_result("Sentry", result)
+        if result.ok:
+            credentials = {
+                "base_url": base_url,
+                "organization_slug": organization_slug,
+                "auth_token": auth_token,
+                "project_slug": project_slug,
+            }
+            upsert_integration("sentry", {"credentials": credentials})
+            env_path = sync_env_values({
+                "SENTRY_URL": base_url,
+                "SENTRY_ORG_SLUG": organization_slug,
+                "SENTRY_PROJECT_SLUG": project_slug,
+                "SENTRY_AUTH_TOKEN": auth_token,
+            })
+            return "Sentry", str(env_path)
+        _console.print("[dim]  Re-enter the Sentry values to try again, or press Ctrl+C to cancel.[/]")
+
+
 def _configure_selected_integrations() -> tuple[list[str], str | None]:
     selected = _choose_many(
         "Select optional integrations to configure now:",
@@ -380,6 +497,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
             Choice(value="datadog", label="Datadog"),
             Choice(value="slack", label="Slack"),
             Choice(value="aws", label="AWS"),
+             Choice(value="github", label="GitHub MCP"),
+             Choice(value="sentry", label="Sentry"),
         ],
     )
     if not selected:
@@ -393,6 +512,8 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "datadog": _configure_datadog,
         "slack": _configure_slack,
         "aws": _configure_aws,
+         "github": _configure_github_mcp,
+         "sentry": _configure_sentry,
     }
 
     for index, service in enumerate(selected, start=1):

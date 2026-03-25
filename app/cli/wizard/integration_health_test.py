@@ -6,7 +6,9 @@ import types
 from app.cli.wizard.integration_health import (
     validate_aws_integration,
     validate_datadog_integration,
+    validate_github_mcp_integration,
     validate_grafana_integration,
+    validate_sentry_integration,
     validate_slack_webhook,
 )
 
@@ -176,3 +178,37 @@ def test_validate_aws_integration_fails_when_boto3_client_raises(monkeypatch) ->
 
     assert result.ok is False
     assert "denied" in result.detail.lower()
+
+
+def test_validate_github_mcp_integration_uses_shared_validator(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.validate_github_mcp_config",
+        lambda _config: types.SimpleNamespace(ok=True, detail="GitHub MCP ok"),
+    )
+
+    result = validate_github_mcp_integration(
+        url="https://api.githubcopilot.com/mcp/",
+        mode="streamable-http",
+        auth_token="ghp_test",
+        toolsets=["repos"],
+    )
+
+    assert result.ok is True
+    assert result.detail == "GitHub MCP ok"
+
+
+def test_validate_sentry_integration_uses_shared_validator(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.cli.wizard.integration_health.validate_sentry_config",
+        lambda _config: types.SimpleNamespace(ok=True, detail="Sentry ok"),
+    )
+
+    result = validate_sentry_integration(
+        base_url="https://sentry.io",
+        organization_slug="demo-org",
+        auth_token="sntrys_test",
+        project_slug="payments",
+    )
+
+    assert result.ok is True
+    assert result.detail == "Sentry ok"

@@ -1,7 +1,7 @@
 """python -m app.integrations <command> [service] [--send-slack-test]
 
 Commands: setup, list, show, remove, verify
-Services: aws, datadog, grafana, opensearch, rds, tracer, slack (verify only)
+Services: aws, datadog, grafana, github, opensearch, rds, sentry, tracer, slack (verify only)
 """
 
 import sys
@@ -24,7 +24,7 @@ def main() -> None:
     if not args or args[0] in ("-h", "--help"):
         print(__doc__)
         print(f"  Supported services: {SUPPORTED}\n")
-        print("  Verify services: grafana, datadog, aws, slack, tracer\n")
+        print("  Verify services: grafana, datadog, aws, slack, tracer, github, sentry\n")
         return
 
     cmd = args[0]

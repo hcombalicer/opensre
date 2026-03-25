@@ -29,6 +29,12 @@ def get_available_actions() -> list[InvestigationAction]:
     from app.agent.tools.tool_actions.datadog.datadog_logs import query_datadog_logs
     from app.agent.tools.tool_actions.datadog.datadog_monitors import query_datadog_monitors
     from app.agent.tools.tool_actions.datadog.datadog_node_ip_to_pods import get_pods_on_node
+    from app.agent.tools.tool_actions.github.github_mcp_actions import (
+        get_github_file_contents,
+        get_github_repository_tree,
+        list_github_commits,
+        search_github_code,
+    )
     from app.agent.tools.tool_actions.grafana.grafana_actions import (
         query_grafana_alert_rules,
         query_grafana_logs,
@@ -38,6 +44,11 @@ def get_available_actions() -> list[InvestigationAction]:
     )
     from app.agent.tools.tool_actions.knowledge_sre_book.sre_knowledge_actions import (
         get_sre_guidance,
+    )
+    from app.agent.tools.tool_actions.sentry.sentry_actions import (
+        get_sentry_issue_details,
+        list_sentry_issue_events,
+        search_sentry_issues,
     )
     from app.agent.tools.tool_actions.tracer.tracer_jobs import (
         get_failed_jobs,
@@ -87,6 +98,31 @@ def get_available_actions() -> list[InvestigationAction]:
             "role_arn": eks["role_arn"],
             "external_id": eks.get("external_id", ""),
             "region": eks.get("region", "us-east-1"),
+        }
+
+    def _gh_available(sources: dict) -> bool:
+        return bool(sources.get("github", {}).get("connection_verified"))
+
+    def _gh_creds(sources: dict) -> dict:
+        github = sources["github"]
+        return {
+            "github_url": github.get("github_url"),
+            "github_mode": github.get("github_mode", "streamable-http"),
+            "github_token": github.get("github_token"),
+            "github_command": github.get("github_command", ""),
+            "github_args": github.get("github_args", []),
+        }
+
+    def _sentry_available(sources: dict) -> bool:
+        return bool(sources.get("sentry", {}).get("connection_verified"))
+
+    def _sentry_creds(sources: dict) -> dict:
+        sentry = sources["sentry"]
+        return {
+            "organization_slug": sentry.get("organization_slug"),
+            "project_slug": sentry.get("project_slug", ""),
+            "sentry_url": sentry.get("sentry_url", "https://sentry.io"),
+            "sentry_token": sentry.get("sentry_token"),
         }
 
     actions = [
@@ -426,6 +462,129 @@ def get_available_actions() -> list[InvestigationAction]:
                 "node_ip": sources.get("datadog", {}).get("node_ip", ""),
                 "time_range_minutes": sources.get("datadog", {}).get("time_range_minutes", 60),
                 **_dd_creds(sources),
+            },
+        ),
+        build_action(
+            name="search_github_code",
+            func=search_github_code,
+            source="github",
+            requires=["owner", "repo", "query"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+            ),
+            parameter_extractor=lambda sources: {
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "query": sources["github"].get("query") or "exception OR error",
+                **_gh_creds(sources),
+            },
+        ),
+        build_action(
+            name="get_github_file_contents",
+            func=get_github_file_contents,
+            source="github",
+            requires=["owner", "repo", "path"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+                and sources.get("github", {}).get("path")
+            ),
+            parameter_extractor=lambda sources: {
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "path": sources["github"]["path"],
+                "ref": sources["github"].get("ref", ""),
+                "sha": sources["github"].get("sha", ""),
+                **_gh_creds(sources),
+            },
+        ),
+        build_action(
+            name="get_github_repository_tree",
+            func=get_github_repository_tree,
+            source="github",
+            requires=["owner", "repo"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+            ),
+            parameter_extractor=lambda sources: {
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "path_filter": sources["github"].get("path", ""),
+                "tree_sha": sources["github"].get("sha") or sources["github"].get("ref", ""),
+                "recursive": True,
+                **_gh_creds(sources),
+            },
+        ),
+        build_action(
+            name="list_github_commits",
+            func=list_github_commits,
+            source="github",
+            requires=["owner", "repo"],
+            availability_check=lambda sources: bool(
+                _gh_available(sources)
+                and sources.get("github", {}).get("owner")
+                and sources.get("github", {}).get("repo")
+            ),
+            parameter_extractor=lambda sources: {
+                "owner": sources["github"]["owner"],
+                "repo": sources["github"]["repo"],
+                "path": sources["github"].get("path", ""),
+                "sha": sources["github"].get("sha") or sources["github"].get("ref", ""),
+                "per_page": 10,
+                **_gh_creds(sources),
+            },
+        ),
+        build_action(
+            name="search_sentry_issues",
+            func=search_sentry_issues,
+            source="sentry",
+            requires=["organization_slug", "sentry_token"],
+            availability_check=_sentry_available,
+            parameter_extractor=lambda sources: {
+                "organization_slug": sources["sentry"]["organization_slug"],
+                "sentry_token": sources["sentry"]["sentry_token"],
+                "query": sources["sentry"].get("query", ""),
+                "sentry_url": sources["sentry"].get("sentry_url", "https://sentry.io"),
+                "project_slug": sources["sentry"].get("project_slug", ""),
+                "limit": 10,
+            },
+        ),
+        build_action(
+            name="get_sentry_issue_details",
+            func=get_sentry_issue_details,
+            source="sentry",
+            requires=["organization_slug", "sentry_token", "issue_id"],
+            availability_check=lambda sources: bool(
+                _sentry_available(sources) and sources.get("sentry", {}).get("issue_id")
+            ),
+            parameter_extractor=lambda sources: {
+                "organization_slug": sources["sentry"]["organization_slug"],
+                "sentry_token": sources["sentry"]["sentry_token"],
+                "issue_id": sources["sentry"]["issue_id"],
+                "sentry_url": sources["sentry"].get("sentry_url", "https://sentry.io"),
+                "project_slug": sources["sentry"].get("project_slug", ""),
+            },
+        ),
+        build_action(
+            name="list_sentry_issue_events",
+            func=list_sentry_issue_events,
+            source="sentry",
+            requires=["organization_slug", "sentry_token", "issue_id"],
+            availability_check=lambda sources: bool(
+                _sentry_available(sources) and sources.get("sentry", {}).get("issue_id")
+            ),
+            parameter_extractor=lambda sources: {
+                "organization_slug": sources["sentry"]["organization_slug"],
+                "sentry_token": sources["sentry"]["sentry_token"],
+                "issue_id": sources["sentry"]["issue_id"],
+                "sentry_url": sources["sentry"].get("sentry_url", "https://sentry.io"),
+                "project_slug": sources["sentry"].get("project_slug", ""),
+                "limit": 10,
             },
         ),
     ]

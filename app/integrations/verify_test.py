@@ -7,7 +7,9 @@ import pytest
 from app.integrations.verify import (
     _verify_aws,
     _verify_datadog,
+    _verify_github,
     _verify_grafana,
+    _verify_sentry,
     _verify_tracer,
     resolve_effective_integrations,
     verification_exit_code,
@@ -158,6 +160,41 @@ def test_verify_tracer_passes_with_env_jwt(monkeypatch: pytest.MonkeyPatch) -> N
     assert result["status"] == "passed"
     assert "org_123" in result["detail"]
     assert "2 integrations" in result["detail"]
+
+
+def test_verify_github_uses_shared_validator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.validate_github_mcp_config",
+        lambda _config: type("Result", (), {"ok": True, "detail": "GitHub MCP ok"})(),
+    )
+
+    result = _verify_github(
+        "local env",
+        {"url": "https://api.githubcopilot.com/mcp/", "mode": "streamable-http", "auth_token": "ghp"},
+    )
+
+    assert result["status"] == "passed"
+    assert result["detail"] == "GitHub MCP ok"
+
+
+def test_verify_sentry_uses_shared_validator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.verify.validate_sentry_config",
+        lambda _config: type("Result", (), {"ok": True, "detail": "Sentry ok"})(),
+    )
+
+    result = _verify_sentry(
+        "local env",
+        {
+            "base_url": "https://sentry.io",
+            "organization_slug": "demo-org",
+            "auth_token": "sntrys",
+            "project_slug": "payments",
+        },
+    )
+
+    assert result["status"] == "passed"
+    assert result["detail"] == "Sentry ok"
 
 
 def test_verification_exit_code_requires_core_success() -> None:

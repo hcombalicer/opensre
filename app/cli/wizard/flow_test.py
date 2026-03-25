@@ -159,3 +159,117 @@ def test_run_wizard_configures_optional_integrations(monkeypatch, tmp_path, caps
     assert "Optional integrations" in output
     assert "integrations" in output
     assert "Grafana, Slack" in output
+
+
+def test_run_wizard_configures_github_mcp_and_sentry(monkeypatch, tmp_path, capsys) -> None:
+    responses = iter([
+        "",  # quickstart
+        "",  # provider
+        "",  # model
+        "5,6",  # github + sentry
+        "",  # github mode -> default
+        "",  # github url -> default
+        "",  # github toolsets -> default
+        "",  # sentry base url -> default
+        "demo-org",
+        "payments",
+    ])
+    secrets = iter([
+        "llm-secret",
+        "ghp_test",
+        "sntrys_test",
+    ])
+    saved_integrations: list[tuple[str, dict]] = []
+    synced_env_values: list[dict[str, str]] = []
+
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+    monkeypatch.setattr(flow.getpass, "getpass", lambda _prompt="": next(secrets))
+    monkeypatch.setattr(flow, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "probe_local_target", lambda _path: ProbeResult("local", True, "ok"))
+    monkeypatch.setattr(
+        flow,
+        "validate_provider_credentials",
+        lambda **_kwargs: ValidationResult(ok=True, detail="validated", sample_response="OpenSRE ready"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "validate_github_mcp_integration",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="GitHub MCP ok"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "validate_sentry_integration",
+        lambda **_kwargs: flow.IntegrationHealthResult(ok=True, detail="Sentry ok"),
+    )
+    monkeypatch.setattr(flow, "save_local_config", lambda **_kwargs: tmp_path / "opensre.json")
+    monkeypatch.setattr(flow, "sync_provider_env", lambda **_kwargs: tmp_path / ".env")
+
+    def _sync_env_values(values: dict[str, str], **_kwargs):
+        synced_env_values.append(values)
+        return tmp_path / ".env"
+
+    monkeypatch.setattr(
+        flow,
+        "sync_env_values",
+        _sync_env_values,
+    )
+    monkeypatch.setattr(
+        flow,
+        "upsert_integration",
+        lambda service, payload: saved_integrations.append((service, payload)),
+    )
+    monkeypatch.setattr(
+        flow,
+        "build_demo_action_response",
+        lambda: {"success": True, "topics": ["recovery_remediation"], "guidance": []},
+    )
+
+    exit_code = flow.run_wizard()
+
+    assert exit_code == 0
+    assert saved_integrations == [
+        (
+            "github",
+            {
+                "credentials": {
+                    "url": flow.DEFAULT_GITHUB_MCP_URL,
+                    "mode": flow.DEFAULT_GITHUB_MCP_MODE,
+                    "auth_token": "ghp_test",
+                    "command": "",
+                    "args": [],
+                    "toolsets": ["repos", "issues", "pull_requests", "actions"],
+                }
+            },
+        ),
+        (
+            "sentry",
+            {
+                "credentials": {
+                    "base_url": flow.DEFAULT_SENTRY_URL,
+                    "organization_slug": "demo-org",
+                    "auth_token": "sntrys_test",
+                    "project_slug": "payments",
+                }
+            },
+        ),
+    ]
+    assert synced_env_values == [
+        {
+            "GITHUB_MCP_URL": flow.DEFAULT_GITHUB_MCP_URL,
+            "GITHUB_MCP_MODE": flow.DEFAULT_GITHUB_MCP_MODE,
+            "GITHUB_MCP_COMMAND": "",
+            "GITHUB_MCP_ARGS": "",
+            "GITHUB_MCP_AUTH_TOKEN": "ghp_test",
+            "GITHUB_MCP_TOOLSETS": "repos,issues,pull_requests,actions",
+        },
+        {
+            "SENTRY_URL": flow.DEFAULT_SENTRY_URL,
+            "SENTRY_ORG_SLUG": "demo-org",
+            "SENTRY_PROJECT_SLUG": "payments",
+            "SENTRY_AUTH_TOKEN": "sntrys_test",
+        },
+    ]
+
+    output = capsys.readouterr().out
+    assert "GitHub MCP" in output
+    assert "Sentry" in output

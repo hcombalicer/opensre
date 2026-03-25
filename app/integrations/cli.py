@@ -7,7 +7,7 @@ Usage:
     python -m app.integrations remove <service>
     python -m app.integrations verify [service] [--send-slack-test]
 
-Supported services: aws, grafana, datadog, slack, opensearch, rds, tracer
+Supported services: aws, grafana, datadog, slack, opensearch, rds, tracer, github, sentry
 """
 
 from __future__ import annotations
@@ -33,7 +33,16 @@ from app.integrations.verify import (
 
 _B = "\033[1m"
 _R = "\033[0m"
-_SECRET_KEYS = frozenset({"api_key", "app_key", "password", "secret_access_key", "session_token", "jwt_token", "webhook_url"})
+_SECRET_KEYS = frozenset({
+    "api_key",
+    "app_key",
+    "password",
+    "secret_access_key",
+    "session_token",
+    "jwt_token",
+    "webhook_url",
+    "auth_token",
+})
 
 
 def _p(label: str, default: str = "", secret: bool = False) -> str:
@@ -134,6 +143,52 @@ def _setup_tracer() -> None:
     upsert_integration("tracer", {"credentials": {"base_url": base_url, "jwt_token": jwt_token}})
 
 
+def _setup_github() -> None:
+    print("  1) SSE  2) Streamable HTTP  3) stdio")
+    choice = _p("Choice", default="2")
+    mode = {"1": "sse", "2": "streamable-http", "3": "stdio"}.get(choice, "streamable-http")
+    credentials: dict[str, Any] = {"mode": mode}
+    if mode == "stdio":
+        command = _p("Command", default="github-mcp-server")
+        args = _p("Args", default="stdio --toolsets repos,issues,pull_requests,actions")
+        if not command:
+            _die("command is required for stdio mode.")
+        credentials["command"] = command
+        credentials["args"] = [part for part in args.split() if part]
+    else:
+        url = _p("MCP URL", default="https://api.githubcopilot.com/mcp/")
+        if not url:
+            _die("url is required for remote MCP modes.")
+        credentials["url"] = url
+    credentials["auth_token"] = _p(
+        "GitHub PAT / auth token (optional if the server authenticates upstream)",
+        secret=True,
+    )
+    toolsets = _p("Toolsets", default="repos,issues,pull_requests,actions")
+    credentials["toolsets"] = [part.strip() for part in toolsets.split(",") if part.strip()]
+    upsert_integration("github", {"credentials": credentials})
+
+
+def _setup_sentry() -> None:
+    base_url = _p("Sentry URL", default="https://sentry.io")
+    organization_slug = _p("Organization slug")
+    auth_token = _p("Auth token", secret=True)
+    project_slug = _p("Project slug (optional)")
+    if not organization_slug or not auth_token:
+        _die("organization_slug and auth_token are required.")
+    upsert_integration(
+        "sentry",
+        {
+            "credentials": {
+                "base_url": base_url,
+                "organization_slug": organization_slug,
+                "auth_token": auth_token,
+                "project_slug": project_slug,
+            }
+        },
+    )
+
+
 _HANDLERS: dict[str, Any] = {
     "aws": _setup_aws,
     "datadog": _setup_datadog,
@@ -142,6 +197,8 @@ _HANDLERS: dict[str, Any] = {
     "opensearch": _setup_opensearch,
     "rds": _setup_rds,
     "tracer": _setup_tracer,
+    "github": _setup_github,
+    "sentry": _setup_sentry,
 }
 
 SUPPORTED = ", ".join(_HANDLERS)

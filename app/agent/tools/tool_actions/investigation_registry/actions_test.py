@@ -48,3 +48,13 @@ def test_execute_aws_operation_is_not_auto_plannable() -> None:
         )
         is False
     )
+
+
+def test_get_available_actions_includes_github_and_sentry_actions() -> None:
+    actions = get_available_actions()
+    action_names = {action.name for action in actions}
+
+    assert "search_github_code" in action_names
+    assert "get_github_file_contents" in action_names
+    assert "search_sentry_issues" in action_names
+    assert "list_sentry_issue_events" in action_names

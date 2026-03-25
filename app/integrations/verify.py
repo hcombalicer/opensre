@@ -18,9 +18,11 @@ from app.agent.tools.clients.datadog.client import DatadogClient, DatadogConfig
 from app.agent.tools.clients.tracer_client.client import TracerClient
 from app.auth.jwt_auth import extract_org_id_from_jwt
 from app.config import get_tracer_base_url
+from app.integrations.github_mcp import build_github_mcp_config, validate_github_mcp_config
+from app.integrations.sentry import build_sentry_config, validate_sentry_config
 from app.integrations.store import load_integrations
 
-SUPPORTED_VERIFY_SERVICES = ("grafana", "datadog", "aws", "slack", "tracer")
+SUPPORTED_VERIFY_SERVICES = ("grafana", "datadog", "aws", "slack", "tracer", "github", "sentry")
 CORE_VERIFY_SERVICES = frozenset({"grafana", "datadog", "aws"})
 _SUPPORTED_GRAFANA_TYPES = ("loki", "tempo", "prometheus")
 
@@ -91,6 +93,32 @@ def resolve_effective_integrations() -> dict[str, dict[str, Any]]:
         effective["slack"] = {
             "source": "local env",
             "config": {"webhook_url": slack_webhook_url},
+        }
+
+    github_integration = classified_integrations.get("github")
+    if isinstance(github_integration, dict):
+        effective["github"] = {
+            "source": source_by_service.get("github", "local env"),
+            "config": {
+                "url": str(github_integration.get("url", "")).strip(),
+                "mode": str(github_integration.get("mode", "streamable-http")).strip(),
+                "command": str(github_integration.get("command", "")).strip(),
+                "args": github_integration.get("args", []),
+                "auth_token": str(github_integration.get("auth_token", "")).strip(),
+                "toolsets": github_integration.get("toolsets", []),
+            },
+        }
+
+    sentry_integration = classified_integrations.get("sentry")
+    if isinstance(sentry_integration, dict):
+        effective["sentry"] = {
+            "source": source_by_service.get("sentry", "local env"),
+            "config": {
+                "base_url": str(sentry_integration.get("base_url", "")).strip(),
+                "organization_slug": str(sentry_integration.get("organization_slug", "")).strip(),
+                "auth_token": str(sentry_integration.get("auth_token", "")).strip(),
+                "project_slug": str(sentry_integration.get("project_slug", "")).strip(),
+            },
         }
 
     return effective
@@ -287,6 +315,28 @@ def _verify_tracer(source: str, config: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def _verify_github(source: str, config: dict[str, Any]) -> dict[str, str]:
+    github_config = build_github_mcp_config(config)
+    result = validate_github_mcp_config(github_config)
+    return _result(
+        "github",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
+def _verify_sentry(source: str, config: dict[str, Any]) -> dict[str, str]:
+    sentry_config = build_sentry_config(config)
+    result = validate_sentry_config(sentry_config)
+    return _result(
+        "sentry",
+        source,
+        "passed" if result.ok else "failed",
+        result.detail,
+    )
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -327,6 +377,10 @@ def verify_integrations(
             results.append(_verify_aws(source, config))
         elif current_service == "tracer":
             results.append(_verify_tracer(source, config))
+        elif current_service == "github":
+            results.append(_verify_github(source, config))
+        elif current_service == "sentry":
+            results.append(_verify_sentry(source, config))
 
     return results
 

@@ -98,7 +98,7 @@ At this stage, only one LLM API key is mandatory. Everything else depends on whi
 
 - Required for any RCA run: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
 - Required only for the `Tracer Web App path`: `JWT_TOKEN`
-- Optional per system: `DD_*`, `GRAFANA_*`, `AWS_*`
+- Optional per system: `DD_*`, `GRAFANA_*`, `AWS_*`, `GITHUB_MCP_*`, `SENTRY_*`
 - Optional only for Slack delivery: `SLACK_WEBHOOK_URL`
 - Optional only for LangGraph deploy: `LANGSMITH_API_KEY`
 
@@ -143,6 +143,8 @@ For a first real-system run, you do not need every integration:
 
 - `Datadog` or `Grafana` is enough to prove the RCA path against a real observability source
 - Add `AWS` only if you want AWS evidence
+- Add `GitHub MCP` only if you want repository/code investigation during failures
+- Add `Sentry` only if you want issue and event evidence from Sentry
 - Add `SLACK_WEBHOOK_URL` only if you want the final report posted to Slack
 
 You can use `.env.example` as a reference for any other optional integrations you want to enable.
@@ -153,9 +155,38 @@ If you want help configuring the local LLM provider and optional local integrati
 opensre onboard
 ```
 
-The onboarding flow writes your provider choice and default model to `~/.opensre/opensre.json`, syncs the active local LLM settings into `.env`, and can also validate and save optional Grafana, Datadog, Slack, and AWS integration settings for local development.
+The onboarding flow writes your provider choice and default model to `~/.opensre/opensre.json`, syncs the active local LLM settings into `.env`, and can also validate and save optional Grafana, Datadog, Slack, AWS, GitHub MCP, and Sentry integration settings for local development.
 
 Because this repo is installed in editable mode via `make install`, `opensre onboard` targets your local checkout while you are coding. If you change `pyproject.toml` entrypoints later, rerun `make install` once to refresh the launcher.
+
+### GitHub MCP setup notes
+
+If you want the agent to inspect repository source code, commit history, and repository structure during failures, configure `GitHub MCP` in `opensre onboard` or `python -m app.integrations setup github`.
+
+- Hosted GitHub MCP uses `https://api.githubcopilot.com/mcp/`
+- Supported transport modes in this repo are `streamable-http`, `sse`, and `stdio`
+- For local verification after setup, run:
+
+```bash
+make verify-integrations SERVICE=github
+```
+
+### Sentry token recommendations
+
+If you want Sentry-backed issue or event investigation, configure `Sentry` in `opensre onboard` or `python -m app.integrations setup sentry`.
+
+Recommended token choice:
+
+- Use a `Sentry Organization Token` first for least-privilege automation
+- Create it in `Settings > Developer Settings > Organization Tokens`
+- Use an `Internal Integration` only if you need broader organization-level API scopes than the organization token provides
+- The local validation and investigation helpers need a token that can read issues and events
+
+After setup, verify it with:
+
+```bash
+make verify-integrations SERVICE=sentry
+```
 
 ### Run the LangGraph dev UI
 

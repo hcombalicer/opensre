@@ -26,6 +26,9 @@ _SERVICE_KEY_MAP = {
     "eks": "aws",
     "amazon eks": "aws",
     "datadog": "datadog",
+     "github": "github",
+     "github_mcp": "github",
+     "sentry": "sentry",
 }
 
 
@@ -99,6 +102,38 @@ def _classify_integrations(
                     "api_key": api_key,
                     "app_key": app_key,
                     "site": site,
+                    "integration_id": integration.get("id", ""),
+                }
+
+        elif key == "github":
+            url = credentials.get("url", "")
+            mode = credentials.get("mode", "streamable-http")
+            command = credentials.get("command", "")
+            args = credentials.get("args", [])
+            auth_token = credentials.get("auth_token", "")
+            toolsets = credentials.get("toolsets", [])
+            if (url and mode != "stdio") or (mode == "stdio" and command):
+                resolved["github"] = {
+                    "url": url,
+                    "mode": mode,
+                    "command": command,
+                    "args": args,
+                    "auth_token": auth_token,
+                    "toolsets": toolsets,
+                    "integration_id": integration.get("id", ""),
+                }
+
+        elif key == "sentry":
+            base_url = credentials.get("base_url", "https://sentry.io")
+            organization_slug = credentials.get("organization_slug", "")
+            auth_token = credentials.get("auth_token", "")
+            project_slug = credentials.get("project_slug", "")
+            if organization_slug and auth_token:
+                resolved["sentry"] = {
+                    "base_url": base_url,
+                    "organization_slug": organization_slug,
+                    "auth_token": auth_token,
+                    "project_slug": project_slug,
                     "integration_id": integration.get("id", ""),
                 }
 
@@ -188,6 +223,42 @@ def _load_env_integrations() -> list[dict[str, Any]]:
                 "secret_access_key": aws_secret_access_key,
                 "session_token": aws_session_token,
                 "region": aws_region,
+            },
+        })
+
+    github_mode = os.getenv("GITHUB_MCP_MODE", "streamable-http").strip() or "streamable-http"
+    github_url = os.getenv("GITHUB_MCP_URL", "").strip()
+    github_command = os.getenv("GITHUB_MCP_COMMAND", "").strip()
+    github_args = os.getenv("GITHUB_MCP_ARGS", "").strip()
+    github_auth_token = os.getenv("GITHUB_MCP_AUTH_TOKEN", "").strip()
+    github_toolsets = os.getenv("GITHUB_MCP_TOOLSETS", "").strip()
+    if (github_mode == "stdio" and github_command) or (github_mode != "stdio" and github_url):
+        integrations.append({
+            "id": "env-github",
+            "service": "github",
+            "status": "active",
+            "credentials": {
+                "url": github_url,
+                "mode": github_mode,
+                "command": github_command,
+                "args": [part for part in github_args.split() if part],
+                "auth_token": github_auth_token,
+                "toolsets": [part.strip() for part in github_toolsets.split(",") if part.strip()],
+            },
+        })
+
+    sentry_org_slug = os.getenv("SENTRY_ORG_SLUG", "").strip()
+    sentry_auth_token = os.getenv("SENTRY_AUTH_TOKEN", "").strip()
+    if sentry_org_slug and sentry_auth_token:
+        integrations.append({
+            "id": "env-sentry",
+            "service": "sentry",
+            "status": "active",
+            "credentials": {
+                "base_url": os.getenv("SENTRY_URL", "https://sentry.io").strip() or "https://sentry.io",
+                "organization_slug": sentry_org_slug,
+                "auth_token": sentry_auth_token,
+                "project_slug": os.getenv("SENTRY_PROJECT_SLUG", "").strip(),
             },
         })
 

@@ -7,7 +7,19 @@ from typing import Annotated, Any, Literal, TypedDict, cast
 
 from langgraph.graph import add_messages
 
-EvidenceSource = Literal["storage", "batch", "tracer_web", "cloudwatch", "aws_sdk", "knowledge", "grafana", "datadog", "eks"]
+EvidenceSource = Literal[
+    "storage",
+    "batch",
+    "tracer_web",
+    "cloudwatch",
+    "aws_sdk",
+    "knowledge",
+    "grafana",
+    "datadog",
+    "eks",
+    "github",
+    "sentry",
+]
 AgentMode = Literal["chat", "investigation"]
 
 
