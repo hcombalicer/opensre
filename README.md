@@ -26,6 +26,12 @@
   </strong>
 </p>
 
+<p>
+  <a href="https://join.slack.com/t/tracer-cloud/shared_invite/zt-2xj0w3i3p-~EH0GFbZodFCXWkR7j3~w">
+    <img src="https://img.shields.io/badge/Join_our_Community_Slack_→-white?style=for-the-badge&logo=slack&logoColor=4A154B" alt="Join Slack">
+  </a>
+</p>
+
 </div>
 
 ---
