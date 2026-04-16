@@ -476,6 +476,13 @@ Thanks goes to these amazing people:
             <sub><b>mudittt</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/hamzzaaamalik">
+            <img src="https://avatars.githubusercontent.com/u/147706212?v=4" width="100" alt="hamzzaaamalik"/>
+            <br />
+            <sub><b>hamzzaaamalik</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
